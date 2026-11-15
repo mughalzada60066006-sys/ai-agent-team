@@ -1,0 +1,51 @@
+name: AI Agent Team 24/7
+on:
+  schedule:            # times are UTC. Riyadh = UTC+3
+    - cron: "0 5 * * *"      # DAILY   08:00 Riyadh  (full pipeline)
+    - cron: "0 4 * * 0"      # WEEKLY  Sunday 07:00 (niche + comments)
+    - cron: "10 */6 * * *"   # GROWTH  every 6 hours
+    - cron: "0 18 * * *"     # REPORT  21:00 Riyadh
+    - cron: "30 * * * *"     # WATCHDOG hourly
+  workflow_dispatch:       # manual START button
+    inputs:
+      mode:
+        description: "start | research | weekly | growth | report | watchdog"
+        default: "start"
+      dry_run:
+        description: "true = no video/posting, false = real run"
+        default: ""
+concurrency:
+  group: team-${{ github.event.schedule || github.event.inputs.mode }}
+  cancel-in-progress: false
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      GATEWAY_KEY: ${{ secrets.GATEWAY_KEY }}
+      YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+      FAL_KEY: ${{ secrets.FAL_KEY }}
+      BLOTATO_API_KEY: ${{ secrets.BLOTATO_API_KEY }}
+      BLOTATO_IDS: ${{ secrets.BLOTATO_IDS }}
+      IMAGE_API_KEY: ${{ secrets.IMAGE_API_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      SHEET_ID: ${{ secrets.SHEET_ID }}
+      GOOGLE_SA_JSON: ${{ secrets.GOOGLE_SA_JSON }}
+      DRY_RUN: ${{ github.event.inputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r requirements.txt
+      - name: Pick mode
+        run: |
+          case "${{ github.event.schedule }}" in
+            "0 5 * * *") M=daily;; "0 4 * * 0") M=weekly;; "10 */6 * * *") M=growth;;
+            "0 18 * * *") M=report;; "30 * * * *") M=watchdog;; *) M="${{ github.event.inputs.mode }}";;
+          esac
+          echo "MODE=${M:-start}" >> $GITHUB_ENV
+      - run: python main.py "$MODE"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: thumbnails, path: out/thumbnails, if-no-files-found: ignore }
